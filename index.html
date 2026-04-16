@@ -383,6 +383,27 @@ path.conn-bidir{
   animation:flowConn .5s linear infinite;
 }
 
+/* ─── LIGHTBOX ─── */
+#lightbox{
+  position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9000;
+  display:none;align-items:center;justify-content:center;cursor:zoom-out;
+}
+#lightbox.on{display:flex;}
+#lightbox img{
+  max-width:90vw;max-height:90vh;
+  border-radius:6px;border:1px solid var(--border2);
+  box-shadow:0 0 40px rgba(0,0,0,.8);
+  object-fit:contain;
+}
+
+/* ─── POPUP IMAGE ─── */
+.lpop-imgs img{
+  width:120px;height:90px;object-fit:cover;
+  border-radius:4px;border:1px solid #333;
+  cursor:zoom-in;transition:opacity .15s;
+}
+.lpop-imgs img:hover{opacity:.85;}
+
 /* ─── MARK LABEL ─── */
 .leaflet-tooltip.mark-label,
 .mark-label{
@@ -595,6 +616,11 @@ path.conn-bidir{
 
 <!-- NOTIFICATION -->
 <div id="notif"></div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="">
+</div>
 
 <!-- ─── SCRIPTS ─── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -975,7 +1001,7 @@ function renderMark(d){
   const gta=l2gta(center);
   const st=STATUSES[d.status]||STATUSES.planned;
   const imgs=d.images?.length
-    ? `<div class="lpop-imgs">${d.images.slice(0,4).map(s=>`<img src="${s}">`).join('')}</div>` : '';
+    ? `<div class="lpop-imgs">${d.images.slice(0,4).map(s=>`<img src="${s}" onclick="openLightbox('${s.replace(/'/g,"\\'")}')">`).join('')}</div>` : '';
   const editBtn=!RO
     ? `<button class="lpop-edit" onclick="editFromMap('${d.id}')">✏️ 編輯</button>` : '';
 
@@ -1260,10 +1286,20 @@ function notify(msg,type='ok'){
   _ntimer=setTimeout(()=>el.classList.remove('on'),2800);
 }
 
+/* ─── LIGHTBOX ─── */
+function openLightbox(src){
+  document.getElementById('lightboxImg').src=src;
+  document.getElementById('lightbox').classList.add('on');
+}
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('on');
+  document.getElementById('lightboxImg').src='';
+}
+
 /* ─── KEYBOARD SHORTCUTS ─── */
 document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ closeLightbox(); closeModal(); cancelConnect(); cancelDraw(); hideSearch(); }
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
-  if(e.key==='Escape'){ closeModal(); cancelConnect(); cancelDraw(); hideSearch(); }
   if(!RO){
     if(e.key==='m'||e.key==='M') toggleDraw('marker');
     if(e.key==='r'||e.key==='R') toggleDraw('rect');
