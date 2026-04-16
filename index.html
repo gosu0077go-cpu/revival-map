@@ -374,13 +374,13 @@ body{
   from{stroke-dashoffset:30;}
   to{stroke-dashoffset:0;}
 }
-.conn-oneway path,.conn-oneway{
-  stroke-dasharray:12,5 !important;
-  animation:flowConn .5s linear infinite !important;
+path.conn-oneway{
+  stroke-dasharray:12,5;
+  animation:flowConn .5s linear infinite;
 }
-.conn-bidir path,.conn-bidir{
-  stroke-dasharray:12,5 !important;
-  animation:flowConn .5s linear infinite !important;
+path.conn-bidir{
+  stroke-dasharray:12,5;
+  animation:flowConn .5s linear infinite;
 }
 
 /* ─── MARK LABEL ─── */
@@ -1034,35 +1034,27 @@ function getOffsetPair(from,to,px){
   };
 }
 
-let _svgReady=false;
-function ensureSVGDefs(){
-  if(_svgReady) return;
-  const svg=document.querySelector('.leaflet-overlay-pane svg');
-  if(!svg) return;
-  if(svg.querySelector('#mend-gold')){ _svgReady=true; return; }
-  const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
-  defs.innerHTML=`
-    <marker id="mend-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#d4a843"/>
-    </marker>
-    <marker id="mend-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#3a8ae8"/>
-    </marker>`;
-  svg.prepend(defs);
-  _svgReady=true;
-}
-
-function applyArrow(polyline,color){
-  setTimeout(()=>{
-    const el=polyline.getElement();
-    if(el) el.setAttribute('marker-end',color==='gold'?'url(#mend-gold)':'url(#mend-blue)');
-  },80);
+function drawArrow(from, to, color){
+  const dx=to.lng-from.lng, dy=to.lat-from.lat;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len<5) return null;
+  const ux=dx/len, uy=dy/len;
+  const px=-uy, py=ux;
+  const sz=Math.min(len*.18, 90);
+  // tip at 88% along the line
+  const tip=L.latLng(from.lat+uy*len*.88, from.lng+ux*len*.88);
+  const base=L.latLng(tip.lat-uy*sz, tip.lng-ux*sz);
+  const hw=sz*.45;
+  return L.polygon([
+    [tip.lat, tip.lng],
+    [base.lat+py*hw, base.lng+px*hw],
+    [base.lat-py*hw, base.lng-px*hw],
+  ],{color,fillColor:color,fillOpacity:1,weight:0,interactive:false}).addTo(_map);
 }
 
 function drawConnLines(d){
   const myConns=d.connectionsTo||d.connections||[];
   if(!myConns.length) return;
-  ensureSVGDefs();
 
   myConns.forEach(toId=>{
     const t=_marks[toId]; if(!t) return;
@@ -1070,23 +1062,23 @@ function drawConnLines(d){
     if(_connLines[key]) return;
 
     const fromC=getCenter(d), toC=getCenter(t);
-    // Check if reverse also exists → bidirectional
     const tConns=t.connectionsTo||t.connections||[];
     const isBidir=tConns.includes(d.id);
+    const color=isBidir?'#3a8ae8':'#d4a843';
+    const cls=isBidir?'conn-bidir':'conn-oneway';
 
     if(isBidir){
-      const off=getOffsetPair(fromC,toC,22);
+      const off=getOffsetPair(fromC,toC,28);
       if(!off){ return; }
-      // line1: d→t
-      const l1=L.polyline(off.line1,{color:'#3a8ae8',weight:4,opacity:.95,className:'conn-bidir'}).addTo(_map);
-      // line2: t→d (reversed so arrow points back)
-      const l2=L.polyline([off.line2[1],off.line2[0]],{color:'#3a8ae8',weight:4,opacity:.95,className:'conn-bidir'}).addTo(_map);
-      applyArrow(l1,'blue'); applyArrow(l2,'blue');
-      _connLines[key]=[l1,l2];
+      const l1=L.polyline(off.line1,{color,weight:4,opacity:.95,className:cls}).addTo(_map);
+      const l2=L.polyline([off.line2[1],off.line2[0]],{color,weight:4,opacity:.95,className:cls}).addTo(_map);
+      const a1=drawArrow(off.line1[0],off.line1[1],color);
+      const a2=drawArrow(off.line2[1],off.line2[0],color);
+      _connLines[key]=[l1,l2,a1,a2].filter(Boolean);
     } else {
-      const line=L.polyline([fromC,toC],{color:'#d4a843',weight:4,opacity:.95,className:'conn-oneway'}).addTo(_map);
-      applyArrow(line,'gold');
-      _connLines[key]=line;
+      const line=L.polyline([fromC,toC],{color,weight:4,opacity:.95,className:cls}).addTo(_map);
+      const arr=drawArrow(fromC,toC,color);
+      _connLines[key]=[line,arr].filter(Boolean);
     }
   });
 }
@@ -1099,8 +1091,8 @@ function removeFromMap(id){
   Object.keys(_connLines).forEach(k=>{
     if(k.startsWith(id+'→')||k.endsWith('→'+id)||k.includes('||'+id)||k.startsWith(id+'||')){
       const v=_connLines[k];
-      if(Array.isArray(v)) v.forEach(l=>_map.removeLayer(l));
-      else _map.removeLayer(v);
+      if(Array.isArray(v)) v.forEach(l=>{ try{_map.removeLayer(l);}catch(e){} });
+      else { try{_map.removeLayer(v);}catch(e){} }
       delete _connLines[k];
     }
   });
