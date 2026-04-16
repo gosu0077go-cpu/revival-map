@@ -369,6 +369,20 @@ body{
 #notif.err{border-color:var(--red);color:var(--red);}
 #notif.info{border-color:var(--amber);color:var(--amber);}
 
+/* ─── CONNECTION LINES ─── */
+@keyframes flowConn{
+  from{stroke-dashoffset:30;}
+  to{stroke-dashoffset:0;}
+}
+.conn-oneway path,.conn-oneway{
+  stroke-dasharray:12,5 !important;
+  animation:flowConn .5s linear infinite !important;
+}
+.conn-bidir path,.conn-bidir{
+  stroke-dasharray:12,5 !important;
+  animation:flowConn .5s linear infinite !important;
+}
+
 /* ─── MARK LABEL ─── */
 .leaflet-tooltip.mark-label,
 .mark-label{
@@ -807,16 +821,25 @@ function setConnMsg(m){ document.getElementById('connectMsg').textContent=m; }
 function onConnClick(id){
   if(!_connectFrom){
     _connectFrom=id;
-    setConnMsg(`已選：「${_marks[id]?.title}」 → 點選第二個標記`);
+    setConnMsg(`起點：「${_marks[id]?.title}」→ 點選終點`);
   } else {
     if(_connectFrom===id){ cancelConnect(); return; }
-    const a={..._marks[_connectFrom]}, b={..._marks[id]};
-    if(!a.connections) a.connections=[];
-    if(!b.connections) b.connections=[];
-    if(!a.connections.includes(id)) a.connections.push(id);
-    if(!b.connections.includes(_connectFrom)) b.connections.push(_connectFrom);
-    store(a.id,a); store(b.id,b);
-    notify(`已連線：${a.title} ↔ ${b.title}`,'ok');
+    const a={..._marks[_connectFrom]};
+    if(!a.connectionsTo) a.connectionsTo=[];
+    if(!a.connectionsTo.includes(id)){
+      a.connectionsTo.push(id);
+      store(a.id,a);
+      // 判斷是否反向也存在 → 提示變雙向
+      const b=_marks[id];
+      const bConns=b?.connectionsTo||[];
+      if(bConns.includes(_connectFrom)){
+        notify(`🔵 雙向連線：${a.title} ↔ ${b.title}`,'info');
+      } else {
+        notify(`🟡 單向連線：${a.title} → ${_marks[id]?.title}`,'ok');
+      }
+    } else {
+      notify('已存在此連線','info');
+    }
     cancelConnect();
   }
 }
@@ -826,7 +849,7 @@ function openModal(geom, data=null){
   _pendingGeom=geom; _editId=data?.id||null;
   _selCat=data?.category||'main';
   _imgs=[...(data?.images||[])];
-  _conns=[...(data?.connections||[])];
+  _conns=[...(data?.connectionsTo||data?.connections||[])];
 
   document.getElementById('modalH').textContent = _editId ? '✏️ 編輯標記' : '⊕ 新增標記';
   document.getElementById('fTitle').value = data?.title||'';
@@ -906,7 +929,7 @@ function saveMark(){
     category: _selCat,
     status: document.getElementById('fStatus').value,
     images: _imgs,
-    connections: _conns,
+    connectionsTo: _conns,
     geom: _pendingGeom||_marks[_editId]?.geom,
     updatedAt: Date.now(),
     createdAt: _marks[id]?.createdAt||Date.now(),
@@ -993,21 +1016,78 @@ function editFromMap(id){
   openModal(d.geom,d);
 }
 
+function getCenter(d){
+  const g=d.geom;
+  if(g.type==='point') return L.latLng(g.latlng.lat,g.latlng.lng);
+  if(g.type==='circle') return L.latLng(g.center.lat,g.center.lng);
+  return L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
+}
+
+function getOffsetPair(from,to,px){
+  const dx=to.lng-from.lng, dy=to.lat-from.lat;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len<1) return null;
+  const nx=-dy/len*px, ny=dx/len*px;
+  return {
+    line1:[L.latLng(from.lat+ny,from.lng+nx), L.latLng(to.lat+ny,to.lng+nx)],
+    line2:[L.latLng(from.lat-ny,from.lng-nx), L.latLng(to.lat-ny,to.lng-nx)],
+  };
+}
+
+let _svgReady=false;
+function ensureSVGDefs(){
+  if(_svgReady) return;
+  const svg=document.querySelector('.leaflet-overlay-pane svg');
+  if(!svg) return;
+  if(svg.querySelector('#mend-gold')){ _svgReady=true; return; }
+  const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+  defs.innerHTML=`
+    <marker id="mend-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d4a843"/>
+    </marker>
+    <marker id="mend-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3a8ae8"/>
+    </marker>`;
+  svg.prepend(defs);
+  _svgReady=true;
+}
+
+function applyArrow(polyline,color){
+  setTimeout(()=>{
+    const el=polyline.getElement();
+    if(el) el.setAttribute('marker-end',color==='gold'?'url(#mend-gold)':'url(#mend-blue)');
+  },80);
+}
+
 function drawConnLines(d){
-  if(!d.connections?.length) return;
-  d.connections.forEach(tid=>{
-    const t=_marks[tid]; if(!t) return;
-    const key=[d.id,tid].sort().join('||');
+  const myConns=d.connectionsTo||d.connections||[];
+  if(!myConns.length) return;
+  ensureSVGDefs();
+
+  myConns.forEach(toId=>{
+    const t=_marks[toId]; if(!t) return;
+    const key=d.id+'→'+toId;
     if(_connLines[key]) return;
-    const getC=x=>{
-      const g=x.geom;
-      if(g.type==='point') return L.latLng(g.latlng.lat,g.latlng.lng);
-      if(g.type==='circle') return L.latLng(g.center.lat,g.center.lng);
-      return L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
-    };
-    _connLines[key]=L.polyline([getC(d),getC(t)],{
-      color:'#d4a843',weight:1.5,opacity:.5,dashArray:'8,5'
-    }).addTo(_map);
+
+    const fromC=getCenter(d), toC=getCenter(t);
+    // Check if reverse also exists → bidirectional
+    const tConns=t.connectionsTo||t.connections||[];
+    const isBidir=tConns.includes(d.id);
+
+    if(isBidir){
+      const off=getOffsetPair(fromC,toC,22);
+      if(!off){ return; }
+      // line1: d→t
+      const l1=L.polyline(off.line1,{color:'#3a8ae8',weight:4,opacity:.95,className:'conn-bidir'}).addTo(_map);
+      // line2: t→d (reversed so arrow points back)
+      const l2=L.polyline([off.line2[1],off.line2[0]],{color:'#3a8ae8',weight:4,opacity:.95,className:'conn-bidir'}).addTo(_map);
+      applyArrow(l1,'blue'); applyArrow(l2,'blue');
+      _connLines[key]=[l1,l2];
+    } else {
+      const line=L.polyline([fromC,toC],{color:'#d4a843',weight:4,opacity:.95,className:'conn-oneway'}).addTo(_map);
+      applyArrow(line,'gold');
+      _connLines[key]=line;
+    }
   });
 }
 
@@ -1017,7 +1097,12 @@ function removeFromMap(id){
     delete _leafObjs[id];
   }
   Object.keys(_connLines).forEach(k=>{
-    if(k.includes(id)){ _map.removeLayer(_connLines[k]); delete _connLines[k]; }
+    if(k.startsWith(id+'→')||k.endsWith('→'+id)||k.includes('||'+id)||k.startsWith(id+'||')){
+      const v=_connLines[k];
+      if(Array.isArray(v)) v.forEach(l=>_map.removeLayer(l));
+      else _map.removeLayer(v);
+      delete _connLines[k];
+    }
   });
 }
 
