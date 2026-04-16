@@ -588,8 +588,17 @@ body{
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
 /* ═══════════════════════════════════════════════
-   CONFIG  —  adjust if your images differ
+   FIREBASE CONFIG — 已內建，無需手動輸入
 ════════════════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCiht0Js2nvn3cG8dPsd2npWobwPpfSWrI",
+  authDomain: "revival-map.firebaseapp.com",
+  databaseURL: "https://revival-map-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "revival-map",
+  storageBucket: "revival-map.firebasestorage.app",
+  messagingSenderId: "496790434516",
+  appId: "1:496790434516:web:1ae6ac28d838251f33c141"
+};
 const MAP = {
   sat:  'maps/satellite.jpg',
   road: 'maps/road.png',
@@ -646,12 +655,9 @@ window.addEventListener('load', () => {
     document.getElementById('drawTools').style.display = 'flex';
   }
 
-  const saved = localStorage.getItem('fbConfig');
-  if (saved) {
-    try { initFb(JSON.parse(saved)); return; } catch(e){}
-  }
-  if (RO) { _localMode=true; loadLocal(); document.getElementById('fbPrompt').style.display='none'; }
-  else { /* show prompt */ }
+  // 自動連接 Firebase，不需要手動輸入設定
+  document.getElementById('fbPrompt').style.display = 'none';
+  initFb(FIREBASE_CONFIG);
 });
 
 /* ─── MAP ─── */
