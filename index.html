@@ -422,6 +422,24 @@ path.conn-bidir{
 .leaflet-tooltip.mark-label::before,
 .mark-label::before{ display:none !important; }
 
+/* ─── RESIZE HANDLES ─── */
+.resize-handle,.resize-handle-circle{
+  width:14px;height:14px;background:#fff;
+  border:2.5px solid #d4a843;
+  box-shadow:0 0 8px rgba(212,168,67,.7);
+  cursor:nwse-resize;
+}
+.resize-handle{border-radius:3px;}
+.resize-handle-circle{border-radius:50%;cursor:ew-resize;}
+#resizeBanner{
+  position:fixed;bottom:36px;left:50%;transform:translateX(-50%);
+  background:var(--panel);border:1px solid var(--amber);border-radius:6px;
+  padding:8px 16px;font-size:13px;color:var(--amber);
+  z-index:2500;display:none;gap:12px;align-items:center;font-family:var(--body);
+  box-shadow:0 0 20px rgba(212,168,67,.2);
+}
+#resizeBanner.on{display:flex;}
+
 /* ─── EMPTY STATE ─── */
 .empty{
   text-align:center;padding:24px 12px;
@@ -616,6 +634,12 @@ path.conn-bidir{
 
 <!-- NOTIFICATION -->
 <div id="notif"></div>
+
+<!-- RESIZE BANNER -->
+<div id="resizeBanner">
+  ✥ 調整大小模式：拖曳角落控制點
+  <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;" onclick="exitResizeMode()">完成</button>
+</div>
 
 <!-- LIGHTBOX -->
 <div id="lightbox" onclick="closeLightbox()">
@@ -1004,6 +1028,8 @@ function renderMark(d){
     ? `<div class="lpop-imgs">${d.images.slice(0,4).map(s=>`<img src="${s}" onclick="openLightbox('${s.replace(/'/g,"\\'")}')">`).join('')}</div>` : '';
   const editBtn=!RO
     ? `<button class="lpop-edit" onclick="editFromMap('${d.id}')">✏️ 編輯</button>` : '';
+  const resizeBtn=!RO&&(geom.type==='rect'||geom.type==='circle')
+    ? `<button class="lpop-edit" style="background:#3a5a3a;margin-left:4px;" onclick="enterResizeMode('${d.id}')">✥ 調整大小</button>` : '';
 
   layer.bindPopup(`
     <div class="lpop">
@@ -1014,7 +1040,7 @@ function renderMark(d){
         <span class="lpop-cat ${st.cls}">${st.label}</span>
         <span class="lpop-coord">X:${gta.x} Y:${gta.y}</span>
       </div>
-      ${imgs}${editBtn}
+      ${imgs}${editBtn}${resizeBtn}
     </div>`,{maxWidth:260});
 
   // 永久顯示名稱標籤
@@ -1286,6 +1312,65 @@ function notify(msg,type='ok'){
   _ntimer=setTimeout(()=>el.classList.remove('on'),2800);
 }
 
+/* ─── RESIZE MODE ─── */
+let _resize=null;
+
+function enterResizeMode(id){
+  exitResizeMode();
+  const d=_marks[id]; if(!d) return;
+  const geom=d.geom;
+  _resize={id,handles:[],pendingGeom:JSON.parse(JSON.stringify(geom))};
+  const hIcon=cls=>L.divIcon({html:`<div class="${cls}"></div>`,className:'',iconSize:[14,14],iconAnchor:[7,7]});
+
+  if(geom.type==='rect'){
+    const b=geom.bounds;
+    [{ll:L.latLng(b.ne.lat,b.sw.lng),role:'nw'},{ll:L.latLng(b.ne.lat,b.ne.lng),role:'ne'},
+     {ll:L.latLng(b.sw.lat,b.sw.lng),role:'sw'},{ll:L.latLng(b.sw.lat,b.ne.lng),role:'se'}]
+    .forEach(({ll,role})=>{
+      const h=L.marker(ll,{icon:hIcon('resize-handle'),draggable:true,zIndexOffset:2000}).addTo(_map);
+      h.on('drag',()=>onRectDrag(id,role,h.getLatLng()));
+      h.on('dragend',()=>saveResized(id));
+      _resize.handles.push(h);
+    });
+  } else if(geom.type==='circle'){
+    const ctr=L.latLng(geom.center.lat,geom.center.lng);
+    const h=L.marker(L.latLng(ctr.lat,ctr.lng+geom.radius),{icon:hIcon('resize-handle-circle'),draggable:true,zIndexOffset:2000}).addTo(_map);
+    h.on('drag',()=>onCircleDrag(id,ctr,h.getLatLng()));
+    h.on('dragend',()=>saveResized(id));
+    _resize.handles.push(h);
+  }
+  document.getElementById('resizeBanner').classList.add('on');
+  _map.closePopup();
+  notify('拖曳控制點調整大小，完成後按「完成」','info');
+}
+
+function onRectDrag(id,role,pos){
+  const p=_resize.pendingGeom.bounds;
+  if(role==='nw'){p.ne.lat=pos.lat;p.sw.lng=pos.lng;}
+  if(role==='ne'){p.ne.lat=pos.lat;p.ne.lng=pos.lng;}
+  if(role==='sw'){p.sw.lat=pos.lat;p.sw.lng=pos.lng;}
+  if(role==='se'){p.sw.lat=pos.lat;p.ne.lng=pos.lng;}
+  const lobj=_leafObjs[id];
+  if(lobj?.layer?.setBounds) lobj.layer.setBounds([[p.sw.lat,p.sw.lng],[p.ne.lat,p.ne.lng]]);
+}
+function onCircleDrag(id,ctr,pos){
+  const r=ctr.distanceTo(pos);
+  _resize.pendingGeom.radius=r;
+  const lobj=_leafObjs[id];
+  if(lobj?.layer?.setRadius) lobj.layer.setRadius(r);
+}
+function saveResized(id){
+  if(!_resize) return;
+  store(id,{..._marks[id],geom:_resize.pendingGeom});
+  notify('已儲存','ok');
+}
+function exitResizeMode(){
+  if(!_resize) return;
+  _resize.handles.forEach(h=>{try{_map.removeLayer(h);}catch(e){}});
+  _resize=null;
+  document.getElementById('resizeBanner').classList.remove('on');
+}
+
 /* ─── LIGHTBOX ─── */
 function openLightbox(src){
   document.getElementById('lightboxImg').src=src;
@@ -1298,7 +1383,7 @@ function closeLightbox(){
 
 /* ─── KEYBOARD SHORTCUTS ─── */
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeLightbox(); closeModal(); cancelConnect(); cancelDraw(); hideSearch(); }
+  if(e.key==='Escape'){ exitResizeMode(); closeLightbox(); closeModal(); cancelConnect(); cancelDraw(); hideSearch(); }
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
   if(!RO){
     if(e.key==='m'||e.key==='M') toggleDraw('marker');
