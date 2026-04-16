@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>復甦島｜作戰地圖系統</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* ─── RESET & VARS ─── */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --ink:    #08100d;
+  --panel:  #0d1710;
+  --card:   #121f17;
+  --border: #1e3328;
+  --border2:#2a4a37;
+  --text:   #9dbfaa;
+  --dim:    #4a6a56;
+  --amber:  #d4a843;
+  --amber2: #f0c060;
+  --red:    #c43535;
+  --green:  #2ea870;
+  --blue:   #3a8ae8;
+  --purple: #8855cc;
+  --yellow: #aaaa30;
+  --mono:   'Share Tech Mono', monospace;
+  --head:   'Rajdhani', 'Microsoft JhengHei', sans-serif;
+  --body:   'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+
+  --cat-main:     #e03535;
+  --cat-side:     #3a8ae8;
+  --cat-trigger:  #e07a20;
+  --cat-npc:      #2ea870;
+  --cat-danger:   #9944cc;
+  --cat-resource: #c8c030;
+}
+
+html,body{height:100%;overflow:hidden;}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--body);
+  display:flex;flex-direction:column;
+}
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* ─── TOPBAR ─── */
+#topbar{
+  height:50px;
+  background:var(--panel);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+  padding:0 14px;
+  flex-shrink:0;
+  position:relative;z-index:1000;
+  box-shadow:0 2px 12px rgba(0,0,0,.6);
+}
+#topbar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--amber)60%,transparent);
+  opacity:.3;
+}
+#logo{
+  font-family:var(--head);
+  font-size:18px;font-weight:700;
+  color:var(--amber);
+  letter-spacing:3px;
+  white-space:nowrap;
+  text-shadow:0 0 14px var(--amber)60%;
+}
+#logo span{color:var(--dim);font-weight:500;font-size:12px;margin-left:6px;}
+
+.sep{width:1px;height:22px;background:var(--border2);flex-shrink:0;}
+.gap{flex:1;}
+
+/* Map toggle */
+.mtoggle{display:flex;border:1px solid var(--border2);border-radius:4px;overflow:hidden;}
+.mtoggle button{
+  padding:4px 12px;font-size:12px;font-family:var(--body);
+  background:none;border:none;color:var(--dim);cursor:pointer;transition:all .2s;
+}
+.mtoggle button.on{background:var(--amber);color:#000;font-weight:600;}
+
+/* Icon buttons */
+.ibtn{
+  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  background:var(--card);border:1px solid var(--border2);border-radius:4px;
+  color:var(--dim);cursor:pointer;font-size:13px;transition:all .18s;
+  position:relative;
+}
+.ibtn:hover{border-color:var(--amber);color:var(--amber);}
+.ibtn.on{background:var(--amber);color:#000;border-color:var(--amber);}
+.ibtn[title]:hover::after{
+  content:attr(title);
+  position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
+  background:var(--panel);border:1px solid var(--border2);border-radius:3px;
+  padding:2px 7px;font-size:11px;white-space:nowrap;color:var(--text);
+  font-family:var(--body);pointer-events:none;z-index:999;
+}
+
+/* Search */
+#searchWrap{position:relative;}
+#searchBox{
+  width:220px;height:32px;
+  padding:0 10px 0 30px;
+  background:var(--card);border:1px solid var(--border2);border-radius:4px;
+  color:var(--text);font-family:var(--body);font-size:13px;
+  transition:border-color .2s;
+}
+#searchBox:focus{outline:none;border-color:var(--amber);}
+#searchBox::placeholder{color:var(--dim);}
+#searchIcon{position:absolute;left:9px;top:9px;color:var(--dim);font-size:13px;pointer-events:none;}
+
+#searchDrop{
+  position:absolute;top:36px;left:0;width:280px;
+  background:var(--panel);border:1px solid var(--border2);border-radius:4px;
+  display:none;z-index:3000;
+  box-shadow:0 8px 24px rgba(0,0,0,.7);
+  max-height:300px;overflow-y:auto;
+}
+.sresult{
+  padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;transition:background .12s;
+}
+.sresult:hover{background:var(--card);}
+.sresult:last-child{border-bottom:none;}
+.sresult-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sresult-title{font-size:13px;color:var(--text);}
+.sresult-sub{font-size:11px;color:var(--dim);}
+
+/* Mode badge */
+.mbadge{
+  font-size:10px;letter-spacing:1px;padding:2px 8px;border-radius:10px;
+  font-family:var(--head);font-weight:700;
+}
+.mbadge.readonly{background:rgba(196,53,53,.15);color:var(--red);border:1px solid rgba(196,53,53,.3);}
+.mbadge.edit{background:rgba(46,168,112,.15);color:var(--green);border:1px solid rgba(46,168,112,.3);}
+
+/* ─── MAIN LAYOUT ─── */
+#main{flex:1;display:flex;overflow:hidden;}
+
+/* ─── SIDEBAR ─── */
+#sidebar{
+  width:268px;flex-shrink:0;
+  background:var(--panel);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:width .25s ease;
+}
+#sidebar.collapsed{width:0;}
+
+.sb-section{
+  border-bottom:1px solid var(--border);
+  padding:10px 12px;
+}
+.sb-title{
+  font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:2px;
+  color:var(--dim);margin-bottom:8px;text-transform:uppercase;
+}
+
+/* Layer list */
+.layer-row{
+  display:flex;align-items:center;gap:8px;
+  padding:3px 0;cursor:pointer;
+}
+.layer-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.layer-name{font-size:13px;flex:1;}
+.layer-cnt{font-size:11px;color:var(--dim);min-width:18px;text-align:right;}
+.sw{
+  width:30px;height:16px;border-radius:8px;background:var(--border2);
+  position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;
+}
+.sw.on{background:var(--green);}
+.sw::after{
+  content:'';position:absolute;width:12px;height:12px;background:#fff;
+  border-radius:50%;top:2px;left:2px;transition:transform .2s;
+}
+.sw.on::after{transform:translateX(14px);}
+
+/* Marker list */
+#mlist{flex:1;overflow-y:auto;padding:6px 8px;}
+.mitem{
+  padding:7px 9px;border-radius:5px;cursor:pointer;
+  border:1px solid transparent;margin-bottom:3px;
+  transition:all .15s;
+}
+.mitem:hover{background:var(--card);border-color:var(--border);}
+.mitem.active{background:var(--card);border-color:var(--amber);}
+.mitem-top{display:flex;align-items:center;gap:6px;}
+.mitem-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.mitem-name{font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mitem-status{
+  font-size:10px;padding:1px 5px;border-radius:3px;flex-shrink:0;font-family:var(--head);letter-spacing:.5px;
+}
+.mitem-desc{font-size:11px;color:var(--dim);margin-top:2px;margin-left:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.st-planned{background:rgba(74,106,86,.25);color:#7a9a86;}
+.st-active  {background:rgba(58,138,232,.2);color:var(--blue);}
+.st-done    {background:rgba(46,168,112,.15);color:var(--green);}
+
+/* ─── MAP ─── */
+#map{flex:1;background:#050a07;}
+.leaflet-container{background:#050a07 !important;}
+
+/* Custom popup */
+.lpop{font-family:var(--body);}
+.lpop-head{font-size:14px;font-weight:700;margin-bottom:5px;}
+.lpop-desc{font-size:12px;color:#aaa;margin-bottom:7px;line-height:1.5;}
+.lpop-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.lpop-cat{font-size:11px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.08);}
+.lpop-coord{font-size:10px;color:#777;font-family:var(--mono);}
+.lpop-imgs{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px;}
+.lpop-imgs img{width:56px;height:56px;object-fit:cover;border-radius:3px;border:1px solid #333;}
+.lpop-edit{
+  margin-top:8px;padding:4px 10px;font-size:11px;
+  background:var(--amber);color:#000;border:none;border-radius:3px;
+  cursor:pointer;font-family:var(--body);font-weight:600;
+}
+.leaflet-popup-content-wrapper{
+  background:#0f1a13 !important;border:1px solid #2a4a37 !important;
+  border-radius:6px !important;box-shadow:0 4px 20px rgba(0,0,0,.7) !important;
+  color:#9dbfaa !important;
+}
+.leaflet-popup-tip{background:#0f1a13 !important;}
+
+/* ─── STATUS BAR ─── */
+#statusbar{
+  height:24px;background:var(--panel);border-top:1px solid var(--border);
+  display:flex;align-items:center;padding:0 14px;gap:20px;
+  font-family:var(--mono);font-size:11px;color:var(--dim);
+  flex-shrink:0;
+}
+#statusbar span{display:flex;align-items:center;gap:5px;}
+#syncDot{font-size:8px;}
+
+/* ─── CONNECT MODE BAR ─── */
+#connectBar{
+  position:fixed;bottom:36px;left:50%;transform:translateX(-50%);
+  background:var(--panel);border:1px solid var(--amber);border-radius:6px;
+  padding:8px 16px;font-size:13px;color:var(--amber);
+  z-index:2500;display:none;gap:12px;align-items:center;
+  box-shadow:0 0 20px rgba(212,168,67,.2);font-family:var(--body);
+}
+#connectBar.on{display:flex;}
+
+/* ─── READONLY BANNER ─── */
+#roBanner{
+  background:rgba(196,53,53,.1);border-bottom:1px solid rgba(196,53,53,.25);
+  padding:4px 14px;font-size:12px;color:var(--red);text-align:center;
+  display:none;letter-spacing:.5px;
+}
+
+/* ─── MODAL ─── */
+#overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:4000;
+  display:none;align-items:center;justify-content:center;
+}
+#overlay.on{display:flex;}
+#modal{
+  background:var(--panel);border:1px solid var(--border2);border-radius:10px;
+  width:500px;max-height:85vh;overflow-y:auto;padding:24px;
+  box-shadow:0 16px 48px rgba(0,0,0,.8);
+}
+#modal h2{
+  font-family:var(--head);font-size:18px;font-weight:700;
+  color:var(--amber);letter-spacing:1px;margin-bottom:18px;
+}
+.fg{margin-bottom:14px;}
+.fg label{
+  display:block;font-size:11px;color:var(--dim);margin-bottom:5px;
+  letter-spacing:1px;font-family:var(--head);text-transform:uppercase;
+}
+.fg input,.fg textarea,.fg select{
+  width:100%;padding:8px 11px;
+  background:var(--card);border:1px solid var(--border2);border-radius:5px;
+  color:var(--text);font-family:var(--body);font-size:13px;transition:border-color .2s;
+}
+.fg input:focus,.fg textarea:focus,.fg select:focus{
+  outline:none;border-color:var(--amber);
+}
+.fg textarea{min-height:70px;resize:vertical;}
+.fg select option{background:var(--card);}
+
+/* Category grid */
+.catgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;}
+.catbtn{
+  padding:7px 4px;border-radius:5px;border:2px solid transparent;
+  cursor:pointer;font-size:12px;text-align:center;font-family:var(--body);
+  background:var(--card);color:var(--text);transition:all .2s;
+}
+.catbtn.on{border-color:#fff !important;background:#1a2a1f;}
+
+/* Images */
+#imgList{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.ithumb{position:relative;width:60px;height:60px;}
+.ithumb img{width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid var(--border2);}
+.iremove{
+  position:absolute;top:-4px;right:-4px;width:16px;height:16px;
+  background:var(--red);border:none;border-radius:50%;
+  color:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.iaddrow{display:flex;gap:5px;margin-top:4px;}
+
+/* Connections */
+#connList{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+.connitem{
+  display:flex;align-items:center;gap:8px;
+  padding:4px 8px;background:var(--card);border-radius:4px;font-size:12px;
+}
+.connrem{margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;}
+
+/* Modal footer */
+.mfooter{display:flex;gap:8px;margin-top:18px;align-items:center;}
+.mfooter-l{flex:1;}
+.btn{
+  padding:8px 18px;border-radius:5px;border:none;
+  font-size:13px;font-family:var(--body);cursor:pointer;transition:all .2s;
+}
+.btn-pri{background:var(--amber);color:#000;font-weight:600;}
+.btn-pri:hover{background:var(--amber2);}
+.btn-del{background:var(--red);color:#fff;}
+.btn-del:hover{background:#e04545;}
+.btn-ghost{
+  background:transparent;border:1px solid var(--border2);color:var(--text);
+}
+.btn-ghost:hover{border-color:var(--text);}
+
+/* ─── FIREBASE PROMPT ─── */
+#fbPrompt{
+  position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:6000;
+  display:flex;align-items:center;justify-content:center;
+}
+#fbBox{
+  background:var(--panel);border:1px solid var(--amber);border-radius:10px;
+  padding:28px;width:480px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 0 40px rgba(212,168,67,.15);
+}
+#fbBox h2{font-family:var(--head);font-size:20px;color:var(--amber);margin-bottom:10px;}
+#fbBox p{font-size:13px;color:var(--dim);margin-bottom:12px;line-height:1.6;}
+#fbBox a{color:var(--amber);}
+#fbBox pre{
+  background:var(--ink);border:1px solid var(--border2);border-radius:5px;
+  padding:10px;font-size:11px;font-family:var(--mono);
+  overflow-x:auto;margin-bottom:12px;color:#9dbfaa;
+}
+#fbInput{
+  width:100%;height:130px;
+  background:var(--card);border:1px solid var(--border2);border-radius:5px;
+  color:var(--text);font-family:var(--mono);font-size:12px;
+  padding:10px;resize:none;margin-bottom:12px;
+}
+#fbInput:focus{outline:none;border-color:var(--amber);}
+
+/* ─── NOTIFICATION ─── */
+#notif{
+  position:fixed;top:60px;right:20px;
+  background:var(--panel);border:1px solid var(--border2);
+  border-radius:6px;padding:9px 15px;font-size:13px;
+  z-index:7000;opacity:0;transform:translateX(12px);
+  transition:all .25s;pointer-events:none;
+}
+#notif.on{opacity:1;transform:none;}
+#notif.ok{border-color:var(--green);color:var(--green);}
+#notif.err{border-color:var(--red);color:var(--red);}
+#notif.info{border-color:var(--amber);color:var(--amber);}
+
+/* ─── EMPTY STATE ─── */
+.empty{
+  text-align:center;padding:24px 12px;
+  color:var(--dim);font-size:12px;line-height:1.8;
+}
+</style>
+</head>
+<body>
+
+<!-- READONLY BANNER -->
+<div id="roBanner">👁 唯讀模式 — 僅供查看，無法新增或編輯標記</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div id="logo">復甦島 <span>MAP SYSTEM</span></div>
+  <span id="modeBadge" class="mbadge readonly">READONLY</span>
+  <div class="sep"></div>
+
+  <!-- Map toggle -->
+  <div class="mtoggle">
+    <button id="btnSat" class="on" onclick="switchMap('sat')">🛰 衛星圖</button>
+    <button id="btnRoad" onclick="switchMap('road')">🗺 道路圖</button>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- Draw tools -->
+  <div id="drawTools" style="display:none;display:flex;gap:4px;">
+    <button class="ibtn" id="btnMark" title="新增標記點 (M)" onclick="toggleDraw('marker')">
+      <i class="fa-solid fa-location-dot"></i>
+    </button>
+    <button class="ibtn" id="btnRect" title="畫框選區域 (R)" onclick="toggleDraw('rect')">
+      <i class="fa-regular fa-square"></i>
+    </button>
+    <button class="ibtn" id="btnConn" title="連線兩個標記 (C)" onclick="startConnectMode()">
+      <i class="fa-solid fa-link"></i>
+    </button>
+    <div class="sep" style="margin:0 2px;"></div>
+  </div>
+
+  <!-- Search -->
+  <div id="searchWrap">
+    <i class="fa-solid fa-magnifying-glass" id="searchIcon"></i>
+    <input type="text" id="searchBox" placeholder="搜尋地點..." oninput="doSearch(this.value)" 
+           autocomplete="off" onblur="setTimeout(hideSearch,200)">
+    <div id="searchDrop"></div>
+  </div>
+
+  <div class="gap"></div>
+
+  <!-- Firebase status -->
+  <span id="syncLbl" style="font-size:11px;color:var(--dim);font-family:var(--mono);">⚪ 未連線</span>
+
+  <div class="sep"></div>
+  <button class="ibtn" title="切換側邊欄" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <!-- Layer controls -->
+    <div class="sb-section">
+      <div class="sb-title">圖層控制</div>
+      <div id="layerList"></div>
+    </div>
+    <!-- Marker list -->
+    <div class="sb-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;border-bottom:none;padding-bottom:0;">
+      <div class="sb-title">標記列表</div>
+      <div id="mlist"></div>
+    </div>
+  </div>
+  <!-- MAP -->
+  <div id="map"></div>
+</div>
+
+<!-- STATUS BAR -->
+<div id="statusbar">
+  <span><i class="fa-solid fa-crosshairs" style="color:var(--amber);"></i> <span id="coordTxt">GTA X: — Y: —</span></span>
+  <span><i class="fa-solid fa-map-pin" style="color:var(--amber);"></i> <span id="cntTxt">標記 0 個</span></span>
+  <span><span id="syncDot">⚪</span><span id="syncTxt">未連線</span></span>
+</div>
+
+<!-- CONNECT MODE BAR -->
+<div id="connectBar">
+  <i class="fa-solid fa-link"></i>
+  <span id="connectMsg">連線模式：點選第一個標記</span>
+  <button class="btn btn-ghost" style="padding:3px 10px;font-size:12px;" onclick="cancelConnect()">取消</button>
+</div>
+
+<!-- EDIT MODAL -->
+<div id="overlay" onclick="overlayClick(event)">
+<div id="modal">
+  <h2 id="modalH">⊕ 新增標記</h2>
+
+  <div class="fg">
+    <label>標記名稱 *</label>
+    <input type="text" id="fTitle" placeholder="例：廢棄農場、巴諾廣場…">
+  </div>
+
+  <div class="fg">
+    <label>備註說明</label>
+    <textarea id="fDesc" placeholder="任務說明、NPC 資訊、觸發條件、注意事項…"></textarea>
+  </div>
+
+  <div class="fg">
+    <label>任務類型</label>
+    <div class="catgrid" id="catGrid"></div>
+  </div>
+
+  <div class="fg">
+    <label>任務狀態</label>
+    <select id="fStatus">
+      <option value="planned">📋 規劃中</option>
+      <option value="active">🔵 進行中</option>
+      <option value="done">✅ 已完成</option>
+    </select>
+  </div>
+
+  <div class="fg" id="imgFg">
+    <label>圖片</label>
+    <div id="imgList"></div>
+    <div class="iaddrow">
+      <input type="text" id="imgUrl" placeholder="貼上圖片 URL…" style="flex:1;">
+      <button class="btn btn-ghost" style="padding:6px 10px;" onclick="addImgUrl()">加入</button>
+    </div>
+    <input type="file" id="imgFile" accept="image/*" style="display:none" onchange="addImgFile(this)">
+    <button class="btn btn-ghost" style="margin-top:5px;padding:5px 10px;font-size:12px;" onclick="imgFile.click()">
+      <i class="fa-solid fa-upload"></i> 上傳圖片（最大 2MB）
+    </button>
+  </div>
+
+  <div class="fg" id="connFg">
+    <label>連線到其他標記</label>
+    <div id="connList"></div>
+    <div style="display:flex;gap:5px;">
+      <select id="connSel" style="flex:1;"></select>
+      <button class="btn btn-ghost" style="padding:6px 10px;" onclick="addConn()">
+        <i class="fa-solid fa-plus"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="mfooter">
+    <div class="mfooter-l">
+      <button class="btn btn-del" id="btnDel" style="display:none;" onclick="deleteMark()">
+        <i class="fa-solid fa-trash"></i> 刪除標記
+      </button>
+    </div>
+    <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+    <button class="btn btn-pri" onclick="saveMark()">儲存</button>
+  </div>
+</div>
+</div>
+
+<!-- FIREBASE PROMPT -->
+<div id="fbPrompt">
+<div id="fbBox">
+  <h2>🔧 連接 Firebase 資料庫</h2>
+  <p>此工具使用 Firebase Realtime Database 進行即時同步協作。<br>請按以下步驟設定：</p>
+  <p><strong style="color:var(--amber);">① 建立 Firebase 專案</strong><br>
+  前往 <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a><br>
+  新建專案 → 建立 Realtime Database（選 test mode）</p>
+  <p><strong style="color:var(--amber);">② 設定資料庫規則</strong>（Rules 頁籤）：</p>
+  <pre>{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}</pre>
+  <p><strong style="color:var(--amber);">③ 取得設定碼</strong><br>
+  專案設定 → 您的應用程式 → SDK → 複製 firebaseConfig 的 JSON 內容</p>
+  <p><strong style="color:var(--amber);">④ 貼入下方：</strong></p>
+  <textarea id="fbInput" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "your-project.firebaseapp.com",
+  "databaseURL": "https://your-project-default-rtdb.firebaseio.com",
+  "projectId": "your-project",
+  "storageBucket": "your-project.appspot.com",
+  "messagingSenderId": "123456789",
+  "appId": "1:123456789:web:..."
+}'></textarea>
+  <button class="btn btn-pri" style="width:100%;margin-bottom:10px;" onclick="doFbInit()">連接 Firebase</button>
+  <div style="text-align:center;">
+    <button class="btn btn-ghost" style="font-size:12px;" onclick="skipFb()">暫時跳過（本地模式，不同步）</button>
+  </div>
+</div>
+</div>
+
+<!-- NOTIFICATION -->
+<div id="notif"></div>
+
+<!-- ─── SCRIPTS ─── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+/* ═══════════════════════════════════════════════
+   CONFIG  —  adjust if your images differ
+════════════════════════════════════════════════ */
+const MAP = {
+  sat:  'maps/satellite.jpg',
+  road: 'maps/road.png',
+  w: 8000, h: 8000          // ← your image dimensions
+};
+
+// Approximate GTA5 world coordinate boundaries
+const GTA = { minX:-4150, maxX:4550, minY:-4500, maxY:8500 };
+
+const CATS = [
+  { id:'main',    label:'主線任務', color:'#e03535', icon:'🔴' },
+  { id:'side',    label:'支線任務', color:'#3a8ae8', icon:'🔵' },
+  { id:'trigger', label:'觸發任務', color:'#e07a20', icon:'🟠' },
+  { id:'npc',     label:'NPC 點位', color:'#2ea870', icon:'🟢' },
+  { id:'danger',  label:'危險區域', color:'#9944cc', icon:'🟣' },
+  { id:'resource',label:'資源點',   color:'#c8c030', icon:'🟡' },
+];
+const STATUSES = {
+  planned:{ label:'規劃中', cls:'st-planned' },
+  active: { label:'進行中', cls:'st-active'  },
+  done:   { label:'已完成', cls:'st-done'    },
+};
+
+/* ═══ STATE ═══ */
+const params = new URLSearchParams(location.search);
+const RO = params.get('readonly')==='true';
+
+let _map, _satL, _roadL, _curMap='sat';
+let _marks = {};          // id → data
+let _leafObjs = {};       // id → { layer }
+let _connLines = {};      // key → polyline
+let _layerGrps = {};
+let _layerVis = {};
+let _db = null, _localMode = false;
+let _editId = null, _pendingGeom = null;
+let _selCat = 'main', _imgs = [], _conns = [];
+let _drawMode = null;
+let _connectMode = false, _connectFrom = null;
+let _rectStart = null, _rectPrev = null;
+
+/* ═══ INIT ═══ */
+window.addEventListener('load', () => {
+  initMap();
+  buildCatUI();
+
+  if (RO) {
+    document.getElementById('roBanner').style.display = 'block';
+    document.getElementById('modeBadge').textContent = 'READ ONLY';
+    document.getElementById('drawTools').style.display = 'none';
+  } else {
+    document.getElementById('modeBadge').textContent = 'EDIT MODE';
+    document.getElementById('modeBadge').className = 'mbadge edit';
+    document.getElementById('drawTools').style.display = 'flex';
+  }
+
+  const saved = localStorage.getItem('fbConfig');
+  if (saved) {
+    try { initFb(JSON.parse(saved)); return; } catch(e){}
+  }
+  if (RO) { _localMode=true; loadLocal(); document.getElementById('fbPrompt').style.display='none'; }
+  else { /* show prompt */ }
+});
+
+/* ─── MAP ─── */
+function initMap(){
+  _map = L.map('map', {
+    crs: L.CRS.Simple,
+    minZoom: -4, maxZoom: 3,
+    zoomSnap: 0.25, zoomDelta: 0.5,
+  });
+
+  const bounds = [[-MAP.h, 0],[0, MAP.w]];
+  _satL  = L.imageOverlay(MAP.sat,  bounds).addTo(_map);
+  _roadL = L.imageOverlay(MAP.road, bounds);
+  _map.fitBounds(bounds);
+
+  CATS.forEach(c => {
+    _layerGrps[c.id] = L.layerGroup().addTo(_map);
+    _layerVis[c.id]  = true;
+  });
+
+  _map.on('mousemove', e => {
+    const g = l2gta(e.latlng);
+    document.getElementById('coordTxt').textContent = `X: ${g.x}  Y: ${g.y}`;
+  });
+
+  _map.on('click', onMapClick);
+  _map.on('mousedown', onMapMouseDown);
+  _map.on('mousemove', onMapMouseMove);
+  _map.on('mouseup',   onMapMouseUp);
+}
+
+/* ─── COORDINATES ─── */
+function l2gta(ll){
+  const px = ll.lng, py = -ll.lat;
+  return {
+    x: Math.round((px/MAP.w)*(GTA.maxX-GTA.minX)+GTA.minX),
+    y: Math.round(GTA.maxY-(py/MAP.h)*(GTA.maxY-GTA.minY)),
+  };
+}
+
+/* ─── MAP SWITCH ─── */
+function switchMap(type){
+  if(type===_curMap) return;
+  _curMap=type;
+  if(type==='sat'){
+    _map.removeLayer(_roadL); _satL.addTo(_map);
+    document.getElementById('btnSat').classList.add('on');
+    document.getElementById('btnRoad').classList.remove('on');
+  } else {
+    _map.removeLayer(_satL); _roadL.addTo(_map);
+    document.getElementById('btnRoad').classList.add('on');
+    document.getElementById('btnSat').classList.remove('on');
+  }
+  // Keep markers on top
+  Object.values(_layerGrps).forEach(lg => lg.bringToFront?.());
+}
+
+/* ─── LAYER TOGGLE ─── */
+function toggleLayer(id){
+  _layerVis[id] = !_layerVis[id];
+  document.getElementById('sw-'+id).classList.toggle('on',_layerVis[id]);
+  if(_layerVis[id]) _layerGrps[id].addTo(_map);
+  else _map.removeLayer(_layerGrps[id]);
+}
+
+/* ─── DRAW MODE ─── */
+function toggleDraw(mode){
+  if(RO) return;
+  const same = _drawMode===mode;
+  cancelDraw();
+  if(!same){
+    _drawMode=mode;
+    document.getElementById(mode==='marker'?'btnMark':'btnRect').classList.add('on');
+    _map.getContainer().style.cursor='crosshair';
+  }
+}
+function cancelDraw(){
+  _drawMode=null;
+  document.getElementById('btnMark').classList.remove('on');
+  document.getElementById('btnRect').classList.remove('on');
+  _map.getContainer().style.cursor='';
+  if(_rectPrev){ _map.removeLayer(_rectPrev); _rectPrev=null; }
+  _rectStart=null;
+  _map.dragging.enable();
+}
+
+function onMapClick(e){
+  if(RO||_drawMode!=='marker') return;
+  openModal({type:'point', latlng:{lat:e.latlng.lat, lng:e.latlng.lng}});
+  cancelDraw();
+}
+
+function onMapMouseDown(e){
+  if(RO||_drawMode!=='rect') return;
+  _rectStart=e.latlng;
+  _map.dragging.disable();
+}
+function onMapMouseMove(e){
+  if(!_rectStart||_drawMode!=='rect') return;
+  if(_rectPrev) _map.removeLayer(_rectPrev);
+  _rectPrev = L.rectangle([_rectStart,e.latlng],{color:'#d4a843',weight:2,fillOpacity:.1}).addTo(_map);
+}
+function onMapMouseUp(e){
+  if(!_rectStart||_drawMode!=='rect') return;
+  _map.dragging.enable();
+  if(_rectPrev){ _map.removeLayer(_rectPrev); _rectPrev=null; }
+  const b = L.latLngBounds(_rectStart, e.latlng);
+  if(Math.abs(_rectStart.lat-e.latlng.lat)<5 && Math.abs(_rectStart.lng-e.latlng.lng)<5){
+    _rectStart=null; return;
+  }
+  openModal({
+    type:'rect',
+    bounds:{
+      sw:{lat:b.getSouth(),lng:b.getWest()},
+      ne:{lat:b.getNorth(),lng:b.getEast()},
+    }
+  });
+  _rectStart=null;
+  cancelDraw();
+}
+
+/* ─── CONNECT MODE ─── */
+function startConnectMode(){
+  if(RO) return;
+  _connectMode=true; _connectFrom=null;
+  document.getElementById('btnConn').classList.add('on');
+  document.getElementById('connectBar').classList.add('on');
+  setConnMsg('連線模式：點選第一個標記');
+}
+function cancelConnect(){
+  _connectMode=false; _connectFrom=null;
+  document.getElementById('btnConn').classList.remove('on');
+  document.getElementById('connectBar').classList.remove('on');
+}
+function setConnMsg(m){ document.getElementById('connectMsg').textContent=m; }
+
+function onConnClick(id){
+  if(!_connectFrom){
+    _connectFrom=id;
+    setConnMsg(`已選：「${_marks[id]?.title}」 → 點選第二個標記`);
+  } else {
+    if(_connectFrom===id){ cancelConnect(); return; }
+    const a={..._marks[_connectFrom]}, b={..._marks[id]};
+    if(!a.connections) a.connections=[];
+    if(!b.connections) b.connections=[];
+    if(!a.connections.includes(id)) a.connections.push(id);
+    if(!b.connections.includes(_connectFrom)) b.connections.push(_connectFrom);
+    store(a.id,a); store(b.id,b);
+    notify(`已連線：${a.title} ↔ ${b.title}`,'ok');
+    cancelConnect();
+  }
+}
+
+/* ─── MODAL ─── */
+function openModal(geom, data=null){
+  _pendingGeom=geom; _editId=data?.id||null;
+  _selCat=data?.category||'main';
+  _imgs=[...(data?.images||[])];
+  _conns=[...(data?.connections||[])];
+
+  document.getElementById('modalH').textContent = _editId ? '✏️ 編輯標記' : '⊕ 新增標記';
+  document.getElementById('fTitle').value = data?.title||'';
+  document.getElementById('fDesc').value  = data?.description||'';
+  document.getElementById('fStatus').value= data?.status||'planned';
+  document.getElementById('btnDel').style.display = _editId?'block':'none';
+  document.getElementById('imgFg').style.display  = RO?'none':'block';
+  document.getElementById('connFg').style.display = RO?'none':'block';
+
+  renderCatGrid(); renderImgs(); renderConns(); fillConnSel();
+  document.getElementById('overlay').classList.add('on');
+  setTimeout(()=>document.getElementById('fTitle').focus(),50);
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('on'); _editId=null; _pendingGeom=null; }
+function overlayClick(e){ if(e.target===document.getElementById('overlay')) closeModal(); }
+
+function renderCatGrid(){
+  document.querySelectorAll('.catbtn').forEach(b=>b.classList.toggle('on',b.dataset.cat===_selCat));
+}
+function pickCat(id){ _selCat=id; renderCatGrid(); }
+
+function renderImgs(){
+  const el=document.getElementById('imgList'); el.innerHTML='';
+  _imgs.forEach((src,i)=>{
+    const d=document.createElement('div'); d.className='ithumb';
+    d.innerHTML=`<img src="${src}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22><rect fill=%22%23222%22 width=%2260%22 height=%2260%22/><text fill=%22%23666%22 font-size=%228%22 x=%2230%22 y=%2233%22 text-anchor=%22middle%22>無效</text></svg>'">
+    <button class="iremove" onclick="_imgs.splice(${i},1);renderImgs()">×</button>`;
+    el.appendChild(d);
+  });
+}
+function addImgUrl(){
+  const v=document.getElementById('imgUrl').value.trim();
+  if(!v) return;
+  _imgs.push(v); document.getElementById('imgUrl').value=''; renderImgs();
+}
+function addImgFile(inp){
+  const f=inp.files[0]; if(!f) return;
+  if(f.size>2097152){ notify('圖片超過 2MB 限制','err'); return; }
+  const r=new FileReader();
+  r.onload=e=>{ _imgs.push(e.target.result); renderImgs(); };
+  r.readAsDataURL(f); inp.value='';
+}
+
+function fillConnSel(){
+  const s=document.getElementById('connSel');
+  s.innerHTML='<option value="">— 選擇要連線的標記 —</option>';
+  Object.values(_marks).forEach(m=>{
+    if(m.id===_editId||_conns.includes(m.id)) return;
+    const o=document.createElement('option');
+    o.value=m.id; o.textContent=m.title; s.appendChild(o);
+  });
+}
+function addConn(){
+  const v=document.getElementById('connSel').value;
+  if(!v||_conns.includes(v)) return;
+  _conns.push(v); renderConns(); fillConnSel();
+}
+function removeConn(id){ _conns=_conns.filter(c=>c!==id); renderConns(); fillConnSel(); }
+function renderConns(){
+  const el=document.getElementById('connList'); el.innerHTML='';
+  _conns.forEach(id=>{
+    const t=_marks[id]; if(!t) return;
+    const d=document.createElement('div'); d.className='connitem';
+    d.innerHTML=`<span>→ ${t.title}</span><button class="connrem" onclick="removeConn('${id}')">✕</button>`;
+    el.appendChild(d);
+  });
+}
+
+/* ─── SAVE / DELETE ─── */
+function saveMark(){
+  const title=document.getElementById('fTitle').value.trim();
+  if(!title){ notify('請輸入標記名稱','err'); return; }
+  const id=_editId||'mk_'+Date.now();
+  const data={
+    id, title,
+    description: document.getElementById('fDesc').value,
+    category: _selCat,
+    status: document.getElementById('fStatus').value,
+    images: _imgs,
+    connections: _conns,
+    geom: _pendingGeom||_marks[_editId]?.geom,
+    updatedAt: Date.now(),
+    createdAt: _marks[id]?.createdAt||Date.now(),
+  };
+  store(id,data);
+  closeModal();
+}
+function deleteMark(){
+  if(!_editId||!confirm('確定刪除此標記？')) return;
+  destroy(_editId); closeModal();
+}
+
+/* ─── RENDER MARKER ON MAP ─── */
+function renderMark(d){
+  removeFromMap(d.id);
+  const cat=CATS.find(c=>c.id===d.category)||CATS[0];
+  const geom=d.geom; let layer;
+
+  if(geom.type==='point'){
+    const icon=L.divIcon({
+      html:`<div style="width:13px;height:13px;background:${cat.color};border:2px solid rgba(255,255,255,.7);border-radius:50%;box-shadow:0 0 8px ${cat.color}80;"></div>`,
+      className:'', iconSize:[13,13], iconAnchor:[6,6],
+    });
+    layer=L.marker([geom.latlng.lat,geom.latlng.lng],{icon});
+  } else {
+    layer=L.rectangle([
+      [geom.bounds.sw.lat,geom.bounds.sw.lng],
+      [geom.bounds.ne.lat,geom.bounds.ne.lng],
+    ],{color:cat.color,weight:2,fillOpacity:.15,fillColor:cat.color});
+  }
+  if(!layer) return;
+
+  const center = geom.type==='point'
+    ? L.latLng(geom.latlng.lat,geom.latlng.lng)
+    : L.latLng((geom.bounds.sw.lat+geom.bounds.ne.lat)/2,(geom.bounds.sw.lng+geom.bounds.ne.lng)/2);
+  const gta=l2gta(center);
+  const st=STATUSES[d.status]||STATUSES.planned;
+  const imgs=d.images?.length
+    ? `<div class="lpop-imgs">${d.images.slice(0,4).map(s=>`<img src="${s}">`).join('')}</div>` : '';
+  const editBtn=!RO
+    ? `<button class="lpop-edit" onclick="editFromMap('${d.id}')">✏️ 編輯</button>` : '';
+
+  layer.bindPopup(`
+    <div class="lpop">
+      <div class="lpop-head" style="color:${cat.color}">${cat.icon} ${d.title}</div>
+      ${d.description?`<div class="lpop-desc">${d.description.replace(/\n/g,'<br>')}</div>`:''}
+      <div class="lpop-meta">
+        <span class="lpop-cat">${cat.label}</span>
+        <span class="lpop-cat ${st.cls}">${st.label}</span>
+        <span class="lpop-coord">X:${gta.x} Y:${gta.y}</span>
+      </div>
+      ${imgs}${editBtn}
+    </div>`,{maxWidth:260});
+
+  if(!RO){
+    layer.on('click',e=>{
+      if(_connectMode){ L.DomEvent.stopPropagation(e); onConnClick(d.id); }
+    });
+    layer.on('contextmenu',e=>{ L.DomEvent.stopPropagation(e); editFromMap(d.id); });
+  }
+
+  _layerGrps[d.category].addLayer(layer);
+  _leafObjs[d.id]={layer};
+  drawConnLines(d);
+}
+
+function editFromMap(id){
+  const d=_marks[id]; if(!d) return;
+  openModal(d.geom,d);
+}
+
+function drawConnLines(d){
+  if(!d.connections?.length) return;
+  d.connections.forEach(tid=>{
+    const t=_marks[tid]; if(!t) return;
+    const key=[d.id,tid].sort().join('||');
+    if(_connLines[key]) return;
+    const getC=x=>{
+      const g=x.geom;
+      return g.type==='point'
+        ? L.latLng(g.latlng.lat,g.latlng.lng)
+        : L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
+    };
+    _connLines[key]=L.polyline([getC(d),getC(t)],{
+      color:'#d4a843',weight:1.5,opacity:.5,dashArray:'8,5'
+    }).addTo(_map);
+  });
+}
+
+function removeFromMap(id){
+  if(_leafObjs[id]){
+    _layerGrps[_marks[id]?.category||'main']?.removeLayer(_leafObjs[id].layer);
+    delete _leafObjs[id];
+  }
+  Object.keys(_connLines).forEach(k=>{
+    if(k.includes(id)){ _map.removeLayer(_connLines[k]); delete _connLines[k]; }
+  });
+}
+
+/* ─── SIDEBAR ─── */
+function buildCatUI(){
+  const ll=document.getElementById('layerList');
+  CATS.forEach(c=>{
+    ll.innerHTML+=`
+    <div class="layer-row">
+      <div class="layer-dot" style="background:${c.color}"></div>
+      <div class="layer-name">${c.label}</div>
+      <div class="layer-cnt" id="cnt-${c.id}">0</div>
+      <div class="sw on" id="sw-${c.id}" onclick="toggleLayer('${c.id}')"></div>
+    </div>`;
+  });
+  const cg=document.getElementById('catGrid');
+  CATS.forEach(c=>{
+    cg.innerHTML+=`<button class="catbtn" data-cat="${c.id}" 
+      style="border-left:4px solid ${c.color}" onclick="pickCat('${c.id}')">
+      ${c.icon} ${c.label}</button>`;
+  });
+}
+
+function updateSidebar(){
+  const items=Object.values(_marks).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const ml=document.getElementById('mlist');
+  ml.innerHTML = items.length===0
+    ? '<div class="empty">尚無標記<br>點選地圖或使用<br>工具列新增</div>' : '';
+
+  items.forEach(d=>{
+    const cat=CATS.find(c=>c.id===d.category)||CATS[0];
+    const st=STATUSES[d.status]||STATUSES.planned;
+    const el=document.createElement('div');
+    el.className='mitem'; el.id='mi-'+d.id;
+    el.innerHTML=`
+      <div class="mitem-top">
+        <div class="mitem-dot" style="background:${cat.color}"></div>
+        <div class="mitem-name">${d.title}</div>
+        <span class="mitem-status ${st.cls}">${st.label}</span>
+      </div>
+      ${d.description?`<div class="mitem-desc">${d.description}</div>`:''}`;
+    el.onclick=()=>focusMark(d.id);
+    ml.appendChild(el);
+  });
+
+  CATS.forEach(c=>{
+    const n=items.filter(m=>m.category===c.id).length;
+    const el=document.getElementById('cnt-'+c.id);
+    if(el) el.textContent=n;
+  });
+  document.getElementById('cntTxt').textContent=`標記 ${items.length} 個`;
+}
+
+function focusMark(id){
+  const d=_marks[id]; if(!d) return;
+  document.querySelectorAll('.mitem').forEach(e=>e.classList.remove('active'));
+  document.getElementById('mi-'+id)?.classList.add('active');
+  const g=d.geom;
+  const c=g.type==='point'
+    ? L.latLng(g.latlng.lat,g.latlng.lng)
+    : L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
+  _map.setView(c,0,{animate:true});
+  setTimeout(()=>_leafObjs[id]?.layer.openPopup(),250);
+}
+
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('collapsed'); }
+
+/* ─── SEARCH ─── */
+function doSearch(q){
+  const drop=document.getElementById('searchDrop');
+  if(!q.trim()){ drop.style.display='none'; return; }
+  const ql=q.toLowerCase();
+  const hits=Object.values(_marks).filter(m=>
+    m.title.toLowerCase().includes(ql)||(m.description||'').toLowerCase().includes(ql)
+  ).slice(0,10);
+  if(!hits.length){ drop.innerHTML='<div style="padding:10px;color:var(--dim);font-size:12px;text-align:center;">找不到符合的標記</div>'; drop.style.display='block'; return; }
+  drop.innerHTML=hits.map(m=>{
+    const cat=CATS.find(c=>c.id===m.category)||CATS[0];
+    const sub=`${cat.label} · ${STATUSES[m.status]?.label||''}`;
+    return `<div class="sresult" onclick="focusMark('${m.id}');hideSearch()">
+      <div class="sresult-dot" style="background:${cat.color}"></div>
+      <div><div class="sresult-title">${m.title}</div><div class="sresult-sub">${sub}</div></div>
+    </div>`;
+  }).join('');
+  drop.style.display='block';
+}
+function hideSearch(){ document.getElementById('searchDrop').style.display='none'; }
+
+/* ─── FIREBASE & STORAGE ─── */
+function doFbInit(){
+  const raw=document.getElementById('fbInput').value.trim();
+  try {
+    const cfg=JSON.parse(raw);
+    localStorage.setItem('fbConfig',JSON.stringify(cfg));
+    document.getElementById('fbPrompt').style.display='none';
+    initFb(cfg);
+  } catch(e){ notify('JSON 格式錯誤，請重新確認','err'); }
+}
+function skipFb(){
+  document.getElementById('fbPrompt').style.display='none';
+  _localMode=true; loadLocal();
+  notify('使用本地模式（資料存在此瀏覽器）','info');
+}
+
+function initFb(cfg){
+  try {
+    if(!firebase.apps.length) firebase.initializeApp(cfg);
+    _db=firebase.database();
+    setSyncUI('🟢','已連線');
+    _db.ref('markers').on('value',snap=>{
+      const data=snap.val()||{};
+      Object.keys(_marks).forEach(id=>removeFromMap(id));
+      _marks={}; _connLines={};
+      Object.values(data).forEach(m=>{ _marks[m.id]=m; });
+      Object.values(_marks).forEach(m=>renderMark(m));
+      updateSidebar();
+    });
+  } catch(e){
+    setSyncUI('🔴','連線失敗');
+    notify('Firebase 連線失敗：'+e.message,'err');
+    _localMode=true; loadLocal();
+  }
+}
+function store(id,data){
+  if(_db){ _db.ref('markers/'+id).set(data); }
+  else {
+    _marks[id]=data;
+    const l=JSON.parse(localStorage.getItem('localMarks')||'{}');
+    l[id]=data; localStorage.setItem('localMarks',JSON.stringify(l));
+    renderMark(data); updateSidebar(); notify('已儲存（本地）','ok');
+  }
+}
+function destroy(id){
+  if(_db){ _db.ref('markers/'+id).remove(); }
+  else {
+    removeFromMap(id); delete _marks[id];
+    const l=JSON.parse(localStorage.getItem('localMarks')||'{}');
+    delete l[id]; localStorage.setItem('localMarks',JSON.stringify(l));
+    updateSidebar(); notify('已刪除','ok');
+  }
+}
+function loadLocal(){
+  const l=JSON.parse(localStorage.getItem('localMarks')||'{}');
+  _marks=l;
+  Object.values(_marks).forEach(m=>renderMark(m));
+  updateSidebar();
+}
+
+function setSyncUI(dot,txt){
+  document.getElementById('syncDot').textContent=dot+' ';
+  document.getElementById('syncTxt').textContent=txt;
+  document.getElementById('syncLbl').textContent=dot+' '+txt;
+}
+
+/* ─── NOTIFICATION ─── */
+let _ntimer;
+function notify(msg,type='ok'){
+  const el=document.getElementById('notif');
+  el.textContent=msg; el.className=`on ${type}`;
+  clearTimeout(_ntimer);
+  _ntimer=setTimeout(()=>el.classList.remove('on'),2800);
+}
+
+/* ─── KEYBOARD SHORTCUTS ─── */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='Escape'){ closeModal(); cancelConnect(); cancelDraw(); hideSearch(); }
+  if(!RO){
+    if(e.key==='m'||e.key==='M') toggleDraw('marker');
+    if(e.key==='r'||e.key==='R') toggleDraw('rect');
+    if(e.key==='c'||e.key==='C') startConnectMode();
+  }
+});
+</script>
+</body>
+</html>
