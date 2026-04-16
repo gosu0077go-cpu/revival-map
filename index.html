@@ -369,6 +369,17 @@ body{
 #notif.err{border-color:var(--red);color:var(--red);}
 #notif.info{border-color:var(--amber);color:var(--amber);}
 
+/* ─── MARK LABEL ─── */
+.mark-label{
+  background:rgba(0,0,0,.78) !important;
+  border:none !important;border-radius:3px !important;
+  color:#fff !important;font-size:11px !important;
+  padding:2px 6px !important;white-space:nowrap !important;
+  font-family:'Microsoft JhengHei',sans-serif !important;
+  box-shadow:none !important;pointer-events:none !important;
+}
+.mark-label::before{ display:none !important; }
+
 /* ─── EMPTY STATE ─── */
 .empty{
   text-align:center;padding:24px 12px;
@@ -402,6 +413,9 @@ body{
     </button>
     <button class="ibtn" id="btnRect" title="畫框選區域 (R)" onclick="toggleDraw('rect')">
       <i class="fa-regular fa-square"></i>
+    </button>
+    <button class="ibtn" id="btnCircle" title="畫圓圈區域 (O)" onclick="toggleDraw('circle')">
+      <i class="fa-regular fa-circle"></i>
     </button>
     <button class="ibtn" id="btnConn" title="連線兩個標記 (C)" onclick="startConnectMode()">
       <i class="fa-solid fa-link"></i>
@@ -608,6 +622,7 @@ let _selCat = 'main', _imgs = [], _conns = [];
 let _drawMode = null;
 let _connectMode = false, _connectFrom = null;
 let _rectStart = null, _rectPrev = null;
+let _circleCenter = null, _circlePrev = null;
 
 /* ═══ INIT ═══ */
 window.addEventListener('load', () => {
@@ -642,6 +657,10 @@ function initMap(){
 
   const bounds = [[-MAP.h, 0],[0, MAP.w]];
   _satL  = L.imageOverlay(MAP.sat,  bounds).addTo(_map);
+  _satL.on('error', () => {
+    notify('衛星圖載入失敗，已切換至道路圖','info');
+    switchMap('road');
+  });
   _roadL = L.imageOverlay(MAP.road, bounds);
   _map.fitBounds(bounds);
 
@@ -702,7 +721,7 @@ function toggleDraw(mode){
   cancelDraw();
   if(!same){
     _drawMode=mode;
-    document.getElementById(mode==='marker'?'btnMark':'btnRect').classList.add('on');
+    document.getElementById(mode==='marker'?'btnMark':mode==='rect'?'btnRect':'btnCircle').classList.add('on');
     _map.getContainer().style.cursor='crosshair';
   }
 }
@@ -710,9 +729,11 @@ function cancelDraw(){
   _drawMode=null;
   document.getElementById('btnMark').classList.remove('on');
   document.getElementById('btnRect').classList.remove('on');
+  document.getElementById('btnCircle').classList.remove('on');
   _map.getContainer().style.cursor='';
   if(_rectPrev){ _map.removeLayer(_rectPrev); _rectPrev=null; }
-  _rectStart=null;
+  if(_circlePrev){ _map.removeLayer(_circlePrev); _circlePrev=null; }
+  _rectStart=null; _circleCenter=null;
   _map.dragging.enable();
 }
 
@@ -723,32 +744,36 @@ function onMapClick(e){
 }
 
 function onMapMouseDown(e){
-  if(RO||_drawMode!=='rect') return;
-  _rectStart=e.latlng;
-  _map.dragging.disable();
+  if(RO) return;
+  if(_drawMode==='rect'){ _rectStart=e.latlng; _map.dragging.disable(); }
+  else if(_drawMode==='circle'){ _circleCenter=e.latlng; _map.dragging.disable(); }
 }
 function onMapMouseMove(e){
-  if(!_rectStart||_drawMode!=='rect') return;
-  if(_rectPrev) _map.removeLayer(_rectPrev);
-  _rectPrev = L.rectangle([_rectStart,e.latlng],{color:'#d4a843',weight:2,fillOpacity:.1}).addTo(_map);
+  if(_drawMode==='rect'&&_rectStart){
+    if(_rectPrev) _map.removeLayer(_rectPrev);
+    _rectPrev=L.rectangle([_rectStart,e.latlng],{color:'#d4a843',weight:2,fillOpacity:.1}).addTo(_map);
+  } else if(_drawMode==='circle'&&_circleCenter){
+    if(_circlePrev) _map.removeLayer(_circlePrev);
+    const r=_circleCenter.distanceTo(e.latlng);
+    _circlePrev=L.circle(_circleCenter,{radius:r,color:'#d4a843',weight:2,fillOpacity:.1}).addTo(_map);
+  }
 }
 function onMapMouseUp(e){
-  if(!_rectStart||_drawMode!=='rect') return;
-  _map.dragging.enable();
-  if(_rectPrev){ _map.removeLayer(_rectPrev); _rectPrev=null; }
-  const b = L.latLngBounds(_rectStart, e.latlng);
-  if(Math.abs(_rectStart.lat-e.latlng.lat)<5 && Math.abs(_rectStart.lng-e.latlng.lng)<5){
-    _rectStart=null; return;
+  if(_drawMode==='rect'&&_rectStart){
+    _map.dragging.enable();
+    if(_rectPrev){_map.removeLayer(_rectPrev);_rectPrev=null;}
+    const b=L.latLngBounds(_rectStart,e.latlng);
+    if(Math.abs(_rectStart.lat-e.latlng.lat)<5&&Math.abs(_rectStart.lng-e.latlng.lng)<5){_rectStart=null;return;}
+    openModal({type:'rect',bounds:{sw:{lat:b.getSouth(),lng:b.getWest()},ne:{lat:b.getNorth(),lng:b.getEast()}}});
+    _rectStart=null; cancelDraw();
+  } else if(_drawMode==='circle'&&_circleCenter){
+    _map.dragging.enable();
+    if(_circlePrev){_map.removeLayer(_circlePrev);_circlePrev=null;}
+    const r=_circleCenter.distanceTo(e.latlng);
+    if(r<5){_circleCenter=null;return;}
+    openModal({type:'circle',center:{lat:_circleCenter.lat,lng:_circleCenter.lng},radius:r});
+    _circleCenter=null; cancelDraw();
   }
-  openModal({
-    type:'rect',
-    bounds:{
-      sw:{lat:b.getSouth(),lng:b.getWest()},
-      ne:{lat:b.getNorth(),lng:b.getEast()},
-    }
-  });
-  _rectStart=null;
-  cancelDraw();
 }
 
 /* ─── CONNECT MODE ─── */
@@ -889,10 +914,15 @@ function renderMark(d){
 
   if(geom.type==='point'){
     const icon=L.divIcon({
-      html:`<div style="width:13px;height:13px;background:${cat.color};border:2px solid rgba(255,255,255,.7);border-radius:50%;box-shadow:0 0 8px ${cat.color}80;"></div>`,
-      className:'', iconSize:[13,13], iconAnchor:[6,6],
+      html:`<div style="width:20px;height:20px;background:${cat.color};border:2.5px solid rgba(255,255,255,.85);border-radius:50%;box-shadow:0 0 10px ${cat.color}90;"></div>`,
+      className:'', iconSize:[20,20], iconAnchor:[10,10],
     });
     layer=L.marker([geom.latlng.lat,geom.latlng.lng],{icon});
+  } else if(geom.type==='circle'){
+    layer=L.circle([geom.center.lat,geom.center.lng],{
+      radius:geom.radius,
+      color:cat.color,weight:2,fillOpacity:.15,fillColor:cat.color,
+    });
   } else {
     layer=L.rectangle([
       [geom.bounds.sw.lat,geom.bounds.sw.lng],
@@ -903,6 +933,8 @@ function renderMark(d){
 
   const center = geom.type==='point'
     ? L.latLng(geom.latlng.lat,geom.latlng.lng)
+    : geom.type==='circle'
+    ? L.latLng(geom.center.lat,geom.center.lng)
     : L.latLng((geom.bounds.sw.lat+geom.bounds.ne.lat)/2,(geom.bounds.sw.lng+geom.bounds.ne.lng)/2);
   const gta=l2gta(center);
   const st=STATUSES[d.status]||STATUSES.planned;
@@ -931,6 +963,8 @@ function renderMark(d){
   }
 
   _layerGrps[d.category].addLayer(layer);
+  // 永久顯示名稱標籤
+  layer.bindTooltip(d.title,{permanent:true,direction:'top',className:'mark-label',offset:[0,-4]});
   _leafObjs[d.id]={layer};
   drawConnLines(d);
 }
@@ -948,9 +982,9 @@ function drawConnLines(d){
     if(_connLines[key]) return;
     const getC=x=>{
       const g=x.geom;
-      return g.type==='point'
-        ? L.latLng(g.latlng.lat,g.latlng.lng)
-        : L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
+      if(g.type==='point') return L.latLng(g.latlng.lat,g.latlng.lng);
+      if(g.type==='circle') return L.latLng(g.center.lat,g.center.lng);
+      return L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
     };
     _connLines[key]=L.polyline([getC(d),getC(t)],{
       color:'#d4a843',weight:1.5,opacity:.5,dashArray:'8,5'
@@ -1025,6 +1059,8 @@ function focusMark(id){
   const g=d.geom;
   const c=g.type==='point'
     ? L.latLng(g.latlng.lat,g.latlng.lng)
+    : g.type==='circle'
+    ? L.latLng(g.center.lat,g.center.lng)
     : L.latLng((g.bounds.sw.lat+g.bounds.ne.lat)/2,(g.bounds.sw.lng+g.bounds.ne.lng)/2);
   _map.setView(c,0,{animate:true});
   setTimeout(()=>_leafObjs[id]?.layer.openPopup(),250);
@@ -1135,6 +1171,7 @@ document.addEventListener('keydown',e=>{
   if(!RO){
     if(e.key==='m'||e.key==='M') toggleDraw('marker');
     if(e.key==='r'||e.key==='R') toggleDraw('rect');
+    if(e.key==='o'||e.key==='O') toggleDraw('circle');
     if(e.key==='c'||e.key==='C') startConnectMode();
   }
 });
